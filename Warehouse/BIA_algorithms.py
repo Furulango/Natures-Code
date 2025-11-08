@@ -47,6 +47,10 @@ def bacterial_foraging_optimization(): # BFO
 def artificial_bee_colony(): # ABC
     pass
 
+# Part 4 - Needed Review
+def group_meaning_based_optimization(): # GMB-OPT
+    pass
+
 
 
 
