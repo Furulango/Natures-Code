@@ -21,6 +21,21 @@ TRUE_PARAMS = {
 
 PARAM_NAMES = ['rs', 'rr', 'Lls', 'Llr', 'Lm', 'J', 'B']
 
+NAMEPLATE = {
+    'rated_power_kw': 2.2,       # kW de salida nominal
+    'rated_speed_rpm': 1710.0,   # rpm nominal
+    'rated_efficiency': 0.85,    # eficiencia nominal (0..1)
+    'friction_frac_of_output': 0.02  # 2% de P_out ~ P_fw típico 1–3%
+}
+
+# Pesos y factores del prior de B
+PRIORS_CONFIG = {
+    'use_b_prior': True,
+    'b_prior_weight': 0.5,   # peso de regularización del prior en el fitness
+    'b_bounds_low': 0.5,     # límites = [low, high] * B_prior
+    'b_bounds_high': 2.0
+}
+
 # Límites de búsqueda para cada parámetro
 BOUNDS = [
     [0.05, 2.0],     # rs (Resistencia estator)
@@ -45,11 +60,14 @@ MOTOR_VOLTAGE = {
 # ============================================
 
 OPTIMIZATION_CONFIG = {
-    'max_fes': 10000,       # Evaluaciones de función máximas
-    'time_steps': 120,      # Pasos de tiempo para ODE (balance velocidad/precisión)
+    'max_fes': 1000,       # Evaluaciones de función máximas
+    'time_total': 1,      # Tiempo total de simulación en segundos
+    'time_steps': 1000,      # Pasos de tiempo para ODE (balance velocidad/precisión) 
     'rtol': 1e-3,          # Tolerancia relativa ODE
     'atol': 1e-4,          # Tolerancia absoluta ODE
     'ode_method': 'rk4',   # Método de integración
+
+    'l2_weight': 3e-3  # Peso para la regularización L2 (Weight Decay)
 }
 
 # ============================================
@@ -60,15 +78,21 @@ ALGORITHM_CONFIGS = {
     'GA': {
         'name': 'Genetic Algorithm',
         'short_name': 'GA',
+        'max_fes': OPTIMIZATION_CONFIG['max_fes'],
         'pop_size': 80,
-        'pc': 0.8,              # Probabilidad de cruce
-        'pm': 0.1,              # Probabilidad de mutación
-        'tournament_size': 3,
-        'color': '#FF6B6B'      # Para gráficas
+        'pc': 0.8,
+        'pm': 0.20,
+        'tournament_size': 2,
+        'eta_c': 10,
+        'eta_m': 15,
+        'immigrants_frac': 0.15,
+        'stagnation_gens': 6,
+        'color': '#FF6B6B'
     },
     'PSO': {
         'name': 'Particle Swarm Optimization',
         'short_name': 'PSO',
+        'max_fes': OPTIMIZATION_CONFIG['max_fes'],
         'pop_size': 60,
         'w': 0.7298,           # Peso de inercia
         'c1': 1.49618,         # Coeficiente cognitivo
@@ -78,6 +102,7 @@ ALGORITHM_CONFIGS = {
     'DE': {
         'name': 'Differential Evolution',
         'short_name': 'DE',
+        'max_fes': OPTIMIZATION_CONFIG['max_fes'],
         'pop_size': 80,
         'F': 0.5,              # Factor de mutación
         'CR': 0.9,             # Tasa de cruce
@@ -86,6 +111,7 @@ ALGORITHM_CONFIGS = {
     'CS': {
         'name': 'Cuckoo Search',
         'short_name': 'CS',
+        'max_fes': OPTIMIZATION_CONFIG['max_fes'],
         'pop_size': 50,
         'pa': 0.25,            # Probabilidad de abandono
         'beta': 1.5,           # Exponente de Levy
@@ -98,7 +124,7 @@ ALGORITHM_CONFIGS = {
 # ============================================
 
 EXPERIMENT_CONFIG = {
-    'num_runs': 30,         # Número de ejecuciones por algoritmo
+    'num_runs': 1,         # Número de ejecuciones por algoritmo
     'base_seed': 42,        # Semilla base para reproducibilidad
     'save_frequency': 5,    # Guardar cada N runs
 }

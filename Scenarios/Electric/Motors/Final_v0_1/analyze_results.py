@@ -6,12 +6,19 @@ EJECUCIÓN:
     python analyze_results.py --phase phase1 --plot
     python analyze_results.py --algorithm GA --phase phase1
 """
-
 import json
 import argparse
 import numpy as np
 import os
 from config import PHASES, PARAM_NAMES
+
+import torch as th
+from torchdiffeq import odeint
+import matplotlib.pyplot as plt
+from motor_dynamic_batch import InductionMotorModelBatch
+from config import MOTOR_VOLTAGE, OPTIMIZATION_CONFIG, PYTORCH_CONFIG, PARAM_NAMES, DATA_FILES, TRUE_PARAMS
+from utils import setup_pytorch, load_measurement_data
+
 
 
 def load_algorithm_results(results_dir, algorithm_name):
@@ -202,7 +209,6 @@ def export_convergence_data(results_dir, output_file):
     
     print(f"✓ Datos de convergencia exportados a: {output_file}")
 
-
 def main():
     parser = argparse.ArgumentParser(description='Analizar resultados de experimentos')
     parser.add_argument('--phase', type=str, default='phase1', 
@@ -211,7 +217,8 @@ def main():
                        help='Algoritmo específico a analizar (GA, PSO, DE, CS)')
     parser.add_argument('--export-convergence', action='store_true',
                        help='Exportar datos de convergencia')
-    
+    parser.add_argument('--plot', action='store_true',
+                       help='Mostrar gráficas de simulación con los mejores parámetros')
     args = parser.parse_args()
     
     # Obtener directorio de resultados
@@ -250,8 +257,102 @@ def main():
         output_file = os.path.join(results_dir, 'convergence_data.json')
         export_convergence_data(results_dir, output_file)
     
+        # Exportar convergencia si se solicita
+    if args.export_convergence:
+        output_file = os.path.join(results_dir, 'convergence_data.json')
+        export_convergence_data(results_dir, output_file)
+    
+    # Graficar simulaciones
+    if getattr(args, "plot", False):
+        for algo in ['GA', 'PSO', 'DE', 'CS']:
+            data = load_algorithm_results(results_dir, algo)
+            if data:
+                plot_best_parameters_simulation(results_dir, algo)
+
     print(f"\n{'='*70}\n")
 
+
+def plot_best_parameters_simulation(results_dir, algorithm_name):
+    """
+    Simula y grafica las señales del motor con los mejores parámetros encontrados
+    frente a las mediciones originales.
+    """
+    data = load_algorithm_results(results_dir, algorithm_name)
+    if data is None:
+        print(f"❌ No se encontraron resultados para {algorithm_name}")
+        return
+
+    best_run = data['runs'][get_best_run(data['runs']) - 1]
+    best_params = th.tensor(
+        [best_run['best_params'][name] for name in PARAM_NAMES],
+        dtype=th.float32
+    ).unsqueeze(0)
+
+    print(f"\n🔍 Simulando con los mejores parámetros del {algorithm_name}:")
+    for name, val in zip(PARAM_NAMES, best_params.squeeze().tolist()):
+        print(f"   {name:<8} = {val:.6f}")
+
+    # Configurar PyTorch y modelo
+    device = setup_pytorch(PYTORCH_CONFIG)
+    best_params = best_params.to(device)
+    model = InductionMotorModelBatch(vqs=MOTOR_VOLTAGE['vqs'], vds=MOTOR_VOLTAGE['vds']).to(device)
+    model.update_params_batch(best_params)
+
+    # Cargar mediciones
+    current_measured, rpm_measured, torque_measured = load_measurement_data(DATA_FILES, device)
+
+    # Simular con los mejores parámetros
+    x0 = th.zeros(1, 5, dtype=th.float32, device=device)
+    t = th.linspace(0, OPTIMIZATION_CONFIG['time_total'], OPTIMIZATION_CONFIG['time_steps'], device=device)
+    sol = odeint(model, x0, t, method=OPTIMIZATION_CONFIG['ode_method'],
+                 rtol=OPTIMIZATION_CONFIG['rtol'], atol=OPTIMIZATION_CONFIG['atol'])
+    sol = sol.permute(1, 0, 2)
+
+    current_sim = model.calculate_stator_current(sol).squeeze(0).cpu().numpy()
+    rpm_sim = model.calculate_rpm(sol).squeeze(0).cpu().numpy()
+    torque_sim = model.calculate_torque(sol).squeeze(0).cpu().numpy()
+
+    # === Conversión explícita a CPU y NumPy ===
+    t_np = t.detach().cpu().numpy()
+
+    def to_cpu_numpy(x):
+        return x.detach().cpu().numpy() if th.is_tensor(x) else x
+
+    current_measured = to_cpu_numpy(current_measured)
+    rpm_measured = to_cpu_numpy(rpm_measured)
+    torque_measured = to_cpu_numpy(torque_measured)
+
+    current_sim = to_cpu_numpy(current_sim)
+    rpm_sim = to_cpu_numpy(rpm_sim)
+    torque_sim = to_cpu_numpy(torque_sim)
+
+
+    # Graficar
+    t_np = t.cpu().numpy()
+    plt.figure(figsize=(12, 8))
+
+    plt.subplot(3, 1, 1)
+    plt.plot(t_np, current_measured[:len(t_np)], label="Medido", color='gray', linestyle='--')
+    plt.plot(t_np, current_sim, label="Simulado", color='blue')
+    plt.ylabel("Corriente (A)")
+    plt.title(f"Simulación con mejores parámetros - {algorithm_name}")
+    plt.legend(); plt.grid()
+
+    plt.subplot(3, 1, 2)
+    plt.plot(t_np, rpm_measured[:len(t_np)], label="Medido", color='gray', linestyle='--')
+    plt.plot(t_np, rpm_sim, label="Simulado", color='orange')
+    plt.ylabel("RPM")
+    plt.legend(); plt.grid()
+
+    plt.subplot(3, 1, 3)
+    plt.plot(t_np, torque_measured[:len(t_np)], label="Medido", color='gray', linestyle='--')
+    plt.plot(t_np, torque_sim, label="Simulado", color='green')
+    plt.xlabel("Tiempo (s)")
+    plt.ylabel("Torque (N·m)")
+    plt.legend(); plt.grid()
+
+    plt.tight_layout()
+    plt.show()
 
 if __name__ == "__main__":
     main()

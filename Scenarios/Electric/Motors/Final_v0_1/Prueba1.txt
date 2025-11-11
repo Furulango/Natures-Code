@@ -1,0 +1,189 @@
+======================================================================
+🔬 FASE 1: VALIDACIÓN CON DATOS SINTÉTICOS
+======================================================================
+✓ GPU detectada: NVIDIA GeForce RTX 5060 Ti
+✓ VRAM disponible: 17.10 GB
+
+📊 Datos cargados:
+   Puntos: 120
+   Corriente: [0.00, 104.85] A
+   RPM: [0.00, 566.46]
+   Torque: [-23.24, 132.50] N·m
+
+⚙️  Inicializando modelo del motor...
+✓ Modelo creado y movido a GPU
+✓ Creando función de fitness...
+✓ Directorio de salida: results/phase1_synthetic
+
+======================================================================
+🔬 EXPERIMENTO: Validación con datos sintéticos
+======================================================================
+Runs por algoritmo: 3
+Directorio de salida: results/phase1_synthetic
+======================================================================
+
+
+🚀 Iniciando experimentos...
+
+
+======================================================================
+🧬 Genetic Algorithm (GA)
+======================================================================
+Run  1/3: Fitness=0.000024, Avg_Error=87.37%, Time=2.5min, ETA=5.0min
+Run  2/3: Fitness=0.000037, Avg_Error=37.21%, Time=2.9min, ETA=2.7min
+Run  3/3: Fitness=0.008382, Avg_Error=118.36%, Time=3.3min, ETA=0.0s
+
+✓ GA completado en 8.7min
+  Archivo: results/phase1_synthetic/GA_results.json
+
+======================================================================
+📊 Estadísticas de GA
+======================================================================
+
+Fitness:
+  Mean ± Std:  0.002815 ± 0.003937
+  Median:      0.000037
+  Min:         0.000024
+  Max:         0.008382
+  IQR:         0.004179
+  CV:          1.3987
+
+Errores de parámetros (%):
+  Parámetro  Mean       Std        Min        Max       
+  --------------------------------------------------
+  rs             43.67     48.97      4.78    112.74
+  rr             22.06     15.81      4.75     42.97
+  Lls            66.55     30.49     29.28    103.97
+  Llr            61.96     37.96      8.81     95.00
+  Lm             66.90     74.85     13.64    172.75
+  J              28.42     25.46      9.17     64.39
+  B             277.31    181.74     20.46    413.90
+
+======================================================================
+🧬 Particle Swarm Optimization (PSO)
+======================================================================
+Run  1/3: Fitness=0.000000, Avg_Error=156.44%, Time=4.4min, ETA=8.7min
+Run  2/3: Fitness=0.000000, Avg_Error=40.73%, Time=4.5min, ETA=4.4min
+Run  3/3: Fitness=0.000223, Avg_Error=151.81%, Time=4.3min, ETA=0.0s
+
+✓ PSO completado en 13.2min
+  Archivo: results/phase1_synthetic/PSO_results.json
+
+======================================================================
+📊 Estadísticas de PSO
+======================================================================
+
+Fitness:
+  Mean ± Std:  0.000074 ± 0.000105
+  Median:      0.000000
+  Min:         0.000000
+  Max:         0.000223
+  IQR:         0.000111
+  CV:          1.4142
+
+Errores de parámetros (%):
+  Parámetro  Mean       Std        Min        Max       
+  --------------------------------------------------
+  rs              4.70      6.64      0.01     14.09
+  rr             10.08      6.91      5.19     19.86
+  Lls            75.28     23.99     41.36     92.25
+  Llr            74.62     28.82     33.87     95.00
+  Lm             64.59     87.68      2.57    188.60
+  J               5.34      7.47      0.04     15.90
+  B             579.66    351.69     90.00    900.00
+
+======================================================================
+🧬 Differential Evolution (DE)
+======================================================================
+Run  1/3: Fitness=0.000000, Avg_Error=119.76%, Time=3.0min, ETA=6.0min
+Run  2/3: Fitness=0.000000, Avg_Error=15.95%, Time=2.8min, ETA=2.9min
+Run  3/3: Fitness=0.000000, Avg_Error=124.06%, Time=3.4min, ETA=0.0s
+
+✓ DE completado en 9.2min
+  Archivo: results/phase1_synthetic/DE_results.json
+
+======================================================================
+📊 Estadísticas de DE
+======================================================================
+
+Fitness:
+  Mean ± Std:  0.000000 ± 0.000000
+  Median:      0.000000
+  Min:         0.000000
+  Max:         0.000000
+  IQR:         0.000000
+  CV:          0.3016
+
+Errores de parámetros (%):
+  Parámetro  Mean       Std        Min        Max       
+  --------------------------------------------------
+  rs              0.03      0.01      0.02      0.03
+  rr              1.29      1.23      0.22      3.02
+  Lls            22.34     22.34      3.29     53.69
+  Llr            23.92     23.96      3.50     57.56
+  Lm              0.63      0.64      0.16      1.54
+  J               0.06      0.02      0.03      0.08
+  B             557.85    335.62     90.00    861.07
+
+======================================================================
+🧬 Cuckoo Search (CS)
+======================================================================
+Run  1/3: Fitness=0.000120, Avg_Error=139.36%, Time=8.5min, ETA=16.9min
+Run  2/3: Fitness=0.000118, Avg_Error=147.82%, Time=8.5min, ETA=8.5min
+Run  3/3: Fitness=0.000116, Avg_Error=143.18%, Time=8.2min, ETA=0.0s
+
+✓ CS completado en 25.1min
+  Archivo: results/phase1_synthetic/CS_results.json
+
+======================================================================
+📊 Estadísticas de CS
+======================================================================
+
+Fitness:
+  Mean ± Std:  0.000118 ± 0.000002
+  Median:      0.000118
+  Min:         0.000116
+  Max:         0.000120
+  IQR:         0.000002
+  CV:          0.0139
+
+Errores de parámetros (%):
+  Parámetro  Mean       Std        Min        Max       
+  --------------------------------------------------
+  rs             18.71      2.95     14.54     20.88
+  rr             18.25      3.25     13.84     21.56
+  Lls            78.42     15.25     57.22     92.47
+  Llr            88.99     20.80     66.99    116.90
+  Lm             18.11      3.25     15.76     22.70
+  J               8.36      5.62      1.73     15.46
+  B             773.34     31.45    741.53    816.17
+
+======================================================================
+✅ TODOS LOS EXPERIMENTOS COMPLETADOS
+======================================================================
+Tiempo total: 56.2min
+Archivos generados:
+  • GA: results/phase1_synthetic/GA_results.json
+  • PSO: results/phase1_synthetic/PSO_results.json
+  • DE: results/phase1_synthetic/DE_results.json
+  • CS: results/phase1_synthetic/CS_results.json
+======================================================================
+
+
+======================================================================
+📊 RESUMEN COMPARATIVO
+======================================================================
+
+Algoritmo       Mean Fitness    Std          Best         Worst       
+------------------------------------------------------------------
+GA              0.002815        0.003937     0.000024     0.008382    
+PSO             0.000074        0.000105     0.000000     0.000223    
+DE              0.000000        0.000000     0.000000     0.000000    
+CS              0.000118        0.000002     0.000116     0.000120    
+------------------------------------------------------------------
+
+💾 Resumen guardado en: results/phase1_synthetic/summary_statistics.json
+
+🏆 Mejor algoritmo (promedio): DE
+   Mean Fitness: 0.000000
+   Std: 0.000000

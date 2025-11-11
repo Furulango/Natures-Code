@@ -12,7 +12,10 @@ from config import TRUE_PARAMS, MOTOR_VOLTAGE, OPTIMIZATION_CONFIG, PYTORCH_CONF
 from motor_dynamic_batch import InductionMotorModelBatch
 from utils import setup_pytorch
 import numpy as np
+import matplotlib.pyplot as plt
 import os
+
+
 
 def generate_synthetic_data():
     # Configurar PyTorch
@@ -30,7 +33,7 @@ def generate_synthetic_data():
     x0 = th.zeros(1, 5, dtype=th.float32, device=device)
     
     # Tiempo de simulación (mismo que en fitness)
-    t = th.linspace(0, 0.1, OPTIMIZATION_CONFIG['time_steps'], device=device)
+    t = th.linspace(0, OPTIMIZATION_CONFIG['time_total'], OPTIMIZATION_CONFIG['time_steps'], device=device)
     
     # Resolver EDO
     sol = odeint(model, x0, t, method=OPTIMIZATION_CONFIG['ode_method'],
@@ -56,6 +59,28 @@ def generate_synthetic_data():
     print(f" • RPM: [{rpm_sim.min():.2f}, {rpm_sim.max():.2f}]")
     print(f" • Torque: [{torque_sim.min():.2f}, {torque_sim.max():.2f}] N·m")
     print("\nAhora ejecuta: python main_phase1.py")
+
+    # Graficar señales
+    plt.figure(figsize=(12, 8))
+    plt.subplot(3,1,1)
+    plt.plot(t.cpu().numpy(), current_sim, label='Corriente (A)', color='blue')
+    plt.title('Datos Sintéticos Generados')
+    plt.ylabel('Corriente (A)')
+    plt.grid()
+
+    plt.subplot(3,1,2)
+    plt.plot(t.cpu().numpy(), rpm_sim, label='RPM', color='green')
+    plt.ylabel('RPM')
+    plt.grid()
+
+    plt.subplot(3,1,3)
+    plt.plot(t.cpu().numpy(), torque_sim, label='Torque (N·m)', color='red')
+    plt.xlabel('Tiempo (s)')
+    plt.ylabel('Torque (N·m)')
+    plt.grid()
+
+    plt.tight_layout()
+    plt.show()
 
 if __name__ == "__main__":
     generate_synthetic_data()

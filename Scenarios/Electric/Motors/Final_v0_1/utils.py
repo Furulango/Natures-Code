@@ -6,6 +6,7 @@ import torch as th
 import numpy as np
 import json
 import os
+import math
 from datetime import datetime
 from config import TRUE_PARAMS, PARAM_NAMES
 
@@ -313,3 +314,19 @@ def create_summary_report(all_results, output_file):
     print(f"\n💾 Resumen guardado en: {output_file}")
     
     return summary
+
+def compute_b_prior_from_nameplate(nameplate: dict) -> float:
+    """
+    Estima B_prior ≈ P_fw(ω_n) / ω_n^2 con P_fw ≈ friction_frac_of_output * P_out.
+    """
+    P_out = float(nameplate['rated_power_kw']) * 1000.0
+    rpm_n = float(nameplate['rated_speed_rpm'])
+    eta   = float(nameplate.get('rated_efficiency', 0.9))
+    frac  = float(nameplate.get('friction_frac_of_output', 0.02))
+    # Velocidad mecánica nominal
+    omega_n = 2.0 * math.pi * rpm_n / 60.0
+    # Pérdida mecánica estimada en nominal
+    P_fw = max(1e-3, frac * P_out)  # W
+    # B_prior en N·m·s/rad (W = B*ω^2)
+    B_prior = P_fw / max(1e-6, omega_n**2)
+    return B_prior

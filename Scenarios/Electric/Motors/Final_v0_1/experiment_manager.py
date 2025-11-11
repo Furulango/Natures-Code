@@ -9,6 +9,7 @@ from config import (
     EXPERIMENT_CONFIG, 
     ALGORITHM_CONFIGS,
     METRICS_TO_SAVE,
+    OPTIMIZATION_CONFIG,
     PARAM_NAMES
 )
 from utils import (
@@ -50,7 +51,7 @@ class ExperimentManager:
         self.results = {}
         
         print(f"\n{'='*70}")
-        print(f"🔬 EXPERIMENTO: {phase_name}")
+        print(f"EXPERIMENTO: {phase_name}")
         print(f"{'='*70}")
         print(f"Runs por algoritmo: {self.num_runs}")
         print(f"Directorio de salida: {output_dir}")
@@ -100,8 +101,8 @@ class ExperimentManager:
                 fitness_func,
                 dim=dim,
                 bounds=bounds,
-                max_fes=config.get('max_fes', 10000),
-                pop_size=config.get('pop_size', 50),
+                max_fes=OPTIMIZATION_CONFIG['max_fes'],
+                pop_size=OPTIMIZATION_CONFIG.get('pop_size', config['pop_size']),
                 **{k: v for k, v in config.items() 
                    if k not in ['name', 'short_name', 'pop_size', 'color', 'max_fes']}
             )
@@ -217,7 +218,7 @@ class ExperimentManager:
         total_time = time.time() - total_start
         
         print(f"\n{'='*70}")
-        print(f"✅ TODOS LOS EXPERIMENTOS COMPLETADOS")
+        print(f" TODOS LOS EXPERIMENTOS COMPLETADOS")
         print(f"{'='*70}")
         print(f"Tiempo total: {format_time(total_time)}")
         print(f"Archivos generados:")
