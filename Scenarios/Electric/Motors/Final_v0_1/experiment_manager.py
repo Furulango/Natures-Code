@@ -76,7 +76,7 @@ class ExperimentManager:
         config = ALGORITHM_CONFIGS[algorithm_name]
         
         print(f"\n{'='*70}")
-        print(f"🧬 {config['name']} ({algorithm_name})")
+        print(f"{config['name']} ({algorithm_name})")
         print(f"{'='*70}")
         
         # Archivo de salida para este algoritmo
@@ -84,7 +84,7 @@ class ExperimentManager:
         
         # Inicializar estructura de resultados
         if os.path.exists(output_file):
-            print(f"⚠️  El archivo {output_file} ya existe. Continuando desde último run...")
+            print(f"-> El archivo {output_file} ya existe. Continuando desde último run...")
             # TODO: Implementar recuperación de runs previos
         
         experiment_start = time.time()
@@ -146,7 +146,7 @@ class ExperimentManager:
         
         total_time = time.time() - experiment_start
         
-        print(f"\n✓ {algorithm_name} completado en {format_time(total_time)}")
+        print(f"\n-> {algorithm_name} completado en {format_time(total_time)}")
         print(f"  Archivo: {output_file}")
         
         # Calcular y mostrar estadísticas
@@ -218,7 +218,7 @@ class ExperimentManager:
         total_time = time.time() - total_start
         
         print(f"\n{'='*70}")
-        print(f" TODOS LOS EXPERIMENTOS COMPLETADOS")
+        print(f"TODOS LOS EXPERIMENTOS COMPLETADOS")
         print(f"{'='*70}")
         print(f"Tiempo total: {format_time(total_time)}")
         print(f"Archivos generados:")
@@ -246,7 +246,7 @@ class ExperimentManager:
         }
         
         print(f"\n{'='*70}")
-        print(f"📊 RESUMEN COMPARATIVO")
+        print(f"RESUMEN COMPARATIVO")
         print(f"{'='*70}\n")
         
         # Tabla de resultados
@@ -277,12 +277,12 @@ class ExperimentManager:
         with open(summary_file, 'w') as f:
             json.dump(summary, f, indent=2)
         
-        print(f"💾 Resumen guardado en: {summary_file}\n")
+        print(f"Resumen guardado en: {summary_file}\n")
         
         # Determinar mejor algoritmo
         best_algo = min(summary['algorithms'].items(), 
                        key=lambda x: x[1]['fitness_statistics']['mean'])
         
-        print(f"🏆 Mejor algoritmo (promedio): {best_algo[0]}")
+        print(f"   Mejor algoritmo (promedio): {best_algo[0]}")
         print(f"   Mean Fitness: {best_algo[1]['fitness_statistics']['mean']:.6f}")
         print(f"   Std: {best_algo[1]['fitness_statistics']['std']:.6f}\n")

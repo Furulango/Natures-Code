@@ -8,7 +8,9 @@ import json
 import os
 import math
 from datetime import datetime
-from config import TRUE_PARAMS, PARAM_NAMES
+
+from config import TRUE_PARAMS, PARAM_NAMES, NAMEPLATE, MOTOR_VOLTAGE, BOUNDS, PRIORS_CONFIG
+
 
 
 def setup_pytorch(config):
@@ -22,10 +24,10 @@ def setup_pytorch(config):
     device = 'cuda' if th.cuda.is_available() else 'cpu'
     
     if th.cuda.is_available():
-        print(f"✓ GPU detectada: {th.cuda.get_device_name(0)}")
-        print(f"✓ VRAM disponible: {th.cuda.get_device_properties(0).total_memory / 1e9:.2f} GB")
+        print(f"-> GPU detectada: {th.cuda.get_device_name(0)}")
+        print(f"-> VRAM disponible: {th.cuda.get_device_properties(0).total_memory / 1e9:.2f} GB")
     else:
-        print("⚠ Usando CPU (será más lento)")
+        print("->  Usando CPU")
     
     return device
 
@@ -48,7 +50,7 @@ def load_measurement_data(data_files, device):
     rpm = th.tensor(np.loadtxt(data_files['rpm']), dtype=th.float32, device=device)
     torque = th.tensor(np.loadtxt(data_files['torque']), dtype=th.float32, device=device)
     
-    print(f"\n📊 Datos cargados:")
+    print(f"\n Datos cargados:")
     print(f"   Puntos: {len(current)}")
     print(f"   Corriente: [{current.min():.2f}, {current.max():.2f}] A")
     print(f"   RPM: [{rpm.min():.2f}, {rpm.max():.2f}]")
@@ -115,7 +117,7 @@ def create_output_directory(output_dir):
     Crea directorio de salida si no existe
     """
     os.makedirs(output_dir, exist_ok=True)
-    print(f"✓ Directorio de salida: {output_dir}")
+    print(f"-> Directorio de salida: {output_dir}")
 
 
 def save_run_data(output_file, run_data, append=True):
@@ -250,7 +252,7 @@ def print_algorithm_statistics(algorithm_name, stats, param_stats):
     Imprime estadísticas de un algoritmo
     """
     print(f"\n{'='*70}")
-    print(f"📊 Estadísticas de {algorithm_name}")
+    print(f" Estadísticas de {algorithm_name}")
     print(f"{'='*70}")
     
     print(f"\nFitness:")
@@ -311,7 +313,7 @@ def create_summary_report(all_results, output_file):
     with open(output_file, 'w') as f:
         json.dump(summary, f, indent=2)
     
-    print(f"\n💾 Resumen guardado en: {output_file}")
+    print(f"\n-> Resumen guardado en: {output_file}")
     
     return summary
 
@@ -330,3 +332,41 @@ def compute_b_prior_from_nameplate(nameplate: dict) -> float:
     # B_prior en N·m·s/rad (W = B*ω^2)
     B_prior = P_fw / max(1e-6, omega_n**2)
     return B_prior
+
+def compute_lm_prior_from_nameplate(nameplate: dict, motor_voltage: dict,
+                                    freq_hz: float = 60.0) -> float:
+    """
+    Estima un prior para Lm sólo con placa y voltaje.
+
+    Idea:
+    1) A partir de Pout, eficiencia y PF, se estima la corriente de línea nominal.
+    2) Se asume que la corriente magnetizante Im es una fracción (imag_frac)
+       de la corriente nominal (típico 25–40%).
+    3) Se usa V_phase_peak ≈ ω_e * Lm * Im_peak  =>  Lm ≈ V / (ω I).
+    """
+    Pout = float(nameplate.get("rated_power_kw", 2.2)) * 1000.0  # W
+    eta  = float(nameplate.get("rated_efficiency", 0.85))
+    pf   = float(nameplate.get("power_factor", 0.82))
+
+    V_ll_rms = float(nameplate.get("rated_voltage_ll",
+                                   MOTOR_VOLTAGE.get("V_line_rms", 220.0)))
+
+    # Potencia aparente de entrada S = Pout / (eta * pf)
+    S_in = Pout / max(eta * pf, 1e-6)
+    I_line_rms = S_in / (math.sqrt(3.0) * V_ll_rms + 1e-6)
+
+    imag_frac = float(PRIORS_CONFIG.get("imag_frac", 0.30))
+    I_mag_rms = imag_frac * I_line_rms
+    I_mag_peak = math.sqrt(2.0) * I_mag_rms
+
+    # V fase pico: ya lo tienes en MOTORVOLTAGE["vqs"]
+    V_phase_peak = float(motor_voltage.get("vqs", 179.6))
+    omega_e = 2.0 * math.pi * freq_hz
+
+    Lm_prior = V_phase_peak / max(omega_e * I_mag_peak, 1e-12)
+
+    # Asegurar que cae dentro de los límites configurados para Lm
+    lm_low, lm_high = BOUNDS[4]  # índice 4 es Lm según PARAMNAMES
+    Lm_prior = float(max(lm_low, min(lm_high, Lm_prior)))
+
+    return Lm_prior

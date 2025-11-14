@@ -1,0 +1,5 @@
+# TODO 
+
+- Revisar estrategia híbrida PSO + L-BFGS (HYBRID_PSO_LBFGS): parece estancarse.
+
+- Revisar CMA-ES (CMAES): iteraciones muy lentas.

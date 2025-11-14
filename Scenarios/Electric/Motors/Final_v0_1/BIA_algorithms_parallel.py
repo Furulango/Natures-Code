@@ -3,6 +3,10 @@ import torch as th
 import numpy as np
 from config import OPTIMIZATION_CONFIG, ALGORITHM_CONFIGS
 
+
+from typing import Optional 
+
+
 device = 'cuda' if th.cuda.is_available() else 'cpu'
 print(f"Using device: {device}")
 
@@ -211,161 +215,278 @@ def particle_swarm_optimization_parallel(
     return gbest.cpu(), gbest_fitness, history
 
 # -----------------------------
-# Differential Evolution (DE)
+# CMA-ES (3er algoritmo)
 # -----------------------------
-def differential_evolution_parallel(
-    fitness_func_batch, dim, bounds,
-    max_fes=None, pop_size=None, F=None, CR=None,
-    jitter=None
+def cma_es_parallel(
+    fitness_func_batch,
+    dim,
+    bounds,
+    max_fes=None,
+    pop_size=None,
+    mu=None,         
+    sigma0=None,
+    **kwargs,        
 ):
-    de_cfg = ALGORITHM_CONFIGS.get('DE', {})
-    max_fes = max_fes if max_fes is not None else OPTIMIZATION_CONFIG.get('max_fes', 10000)
-    pop_size = pop_size if pop_size is not None else de_cfg.get('pop_size', 80)
-    F = F if F is not None else de_cfg.get('F', 0.5)
-    CR = CR if CR is not None else de_cfg.get('CR', 0.9)
-    jitter = jitter if jitter is not None else de_cfg.get('jitter', 0.1)  # factor de jitter en F
+    """
+    CMA-ES continuo, versión vectorizada en PyTorch.
+    Se adapta muy bien a problemas de baja dimensión como este.
+    """
 
-    bounds = th.tensor(bounds, dtype=th.float32, device=device)
-    lower, upper = bounds[:, 0], bounds[:, 1]
+    cma_cfg = ALGORITHM_CONFIGS.get("CMAES", {})
+    max_fes = max_fes if max_fes is not None else OPTIMIZATION_CONFIG.get("max_fes", 10000)
 
-    population = th.rand(pop_size, dim, device=device) * (upper - lower) + lower
-    fitness = fitness_func_batch(population)
-    fes = pop_size
+    bounds_t = th.tensor(bounds, dtype=th.float32, device=device)
+    lower, upper = bounds_t[:, 0], bounds_t[:, 1]
+    span = upper - lower
 
-    best_idx = th.argmin(fitness)
-    best_solution = population[best_idx].clone()
-    best_fitness = fitness[best_idx].item()
-    prev_best = best_fitness
-    history = [best_fitness]
+    # Tamaño de población (lambda) típico: 4 + int(3 * log(dim))
+    if pop_size is None:
+        pop_size = cma_cfg.get("pop_size", 4 + int(3 * math.log(dim + 1)))
+    lam = pop_size
+
+    # Parámetros de pesos (μ y pesos recombinación)
+    mu = cma_cfg.get("mu", lam // 2)
+    weights = th.tensor(
+        [math.log(mu + 0.5) - math.log(i + 1) for i in range(mu)],
+        dtype=th.float32,
+        device=device
+    )
+    weights = weights / weights.sum()
+    mu_eff = (weights.sum() ** 2) / (weights ** 2).sum()
+
+    # Parámetros de adaptación estándar CMA-ES
+    c_sigma = cma_cfg.get("c_sigma", (mu_eff + 2) / (dim + mu_eff + 5))
+    d_sigma = cma_cfg.get("d_sigma", 1 + 2 * max(0, math.sqrt((mu_eff - 1) / (dim + 1)) - 1) + c_sigma)
+    c_c = cma_cfg.get("c_c", (4 + mu_eff / dim) / (dim + 4 + 2 * mu_eff / dim))
+    c1 = cma_cfg.get("c1", 2 / ((dim + 1.3) ** 2 + mu_eff))
+    c_mu = cma_cfg.get("c_mu", min(1 - c1, 2 * (mu_eff - 2 + 1 / mu_eff) / ((dim + 2) ** 2 + mu_eff)))
+
+    # Sigma inicial
+    if sigma0 is None:
+        sigma0 = cma_cfg.get("sigma0", 0.3)
+    sigma = sigma0 * span.mean().item()
+
+    # Inicializar media en el centro del hipercubo
+    m = (lower + upper) / 2.0
+
+    # Matriz de covarianza inicial identidad
+    C = th.eye(dim, device=device)
+    p_sigma = th.zeros(dim, device=device)
+    p_c = th.zeros(dim, device=device)
+
+    history = []
+    fes = 0
+
+    # Factor de expectativa de norma de N(0, I)
+    expected_norm = math.sqrt(dim) * (1 - 1 / (4 * dim) + 1 / (21 * dim * dim))
+
+    best_solution = None
+    best_fitness = float("inf")
 
     while fes < max_fes:
-        trials = th.zeros_like(population)
-        # Jitter adaptativo de F por iteración para romper simetrías
-        F_eff = F * (1.0 + jitter * th.randn(1, device=device).item())
+        # -----------------------
+        # 1) Muestreo de población
+        # -----------------------
+        # Descomponer C = B D^2 B^T
+        eigvals, eigvecs = th.linalg.eigh(C)
+        eigvals = th.clamp(eigvals, min=1e-12)
+        D = th.sqrt(eigvals)
+        B = eigvecs
+        BD = B * D.unsqueeze(0)  # columnas escaladas
 
-        for i in range(pop_size):
-            indices = th.randperm(pop_size, device=device)
-            indices = indices[indices != i][:3]
-            r1, r2, r3 = indices
-            mutant = th.clamp(population[r1] + F_eff * (population[r2] - population[r3]), lower, upper)
-            trial = population[i].clone()
-            cross_points = th.rand(dim, device=device) < CR
-            if not cross_points.any():
-                cross_points[th.randint(0, dim, (1,), device=device)] = True
-            trial[cross_points] = mutant[cross_points]
-            trials[i] = trial
+        # Generar lam muestras: x_k = m + sigma * BD * z_k
+        z = th.randn(lam, dim, device=device)
+        y = z @ BD.T
+        xs = m.unsqueeze(0) + sigma * y
+        xs = th.clamp(xs, lower, upper)
 
-        if fes + pop_size <= max_fes:
-            trial_fitness = fitness_func_batch(trials)
-            fes += pop_size
+        # -----------------------
+        # 2) Evaluación en batch
+        # -----------------------
+        if fes + lam <= max_fes:
+            fit = fitness_func_batch(xs)
+            fes += lam
         else:
             remaining = max_fes - fes
-            trial_fitness = fitness_func_batch(trials[:remaining])
-            trial_fitness = th.cat([trial_fitness, fitness[remaining:]])
+            fit_part = fitness_func_batch(xs[:remaining])
+            pad = th.full((lam - remaining,), float("inf"), device=device)
+            fit = th.cat([fit_part, pad])
             fes = max_fes
 
-        improved = trial_fitness < fitness
-        population = th.where(improved.unsqueeze(1), trials, population)
-        fitness = th.where(improved, trial_fitness, fitness)
-
-        current_best_idx = th.argmin(fitness)
-        if fitness[current_best_idx] < best_fitness:
-            best_fitness = fitness[current_best_idx].item()
-            best_solution = population[current_best_idx].clone()
-
-        # Si no mejora respecto al mejor global previo, aumentar ligeramente F para explorar
-        if best_fitness >= prev_best - 1e-12:
-            F = min(0.9, F * 1.02)
-        else:
-            F = max(0.3, F * 0.99)
-        prev_best = best_fitness
+        # Actualizar mejor global
+        cur_best_idx = th.argmin(fit)
+        cur_best_fit = fit[cur_best_idx].item()
+        if cur_best_fit < best_fitness:
+            best_fitness = cur_best_fit
+            best_solution = xs[cur_best_idx].clone()
 
         history.append(best_fitness)
-        print(f"FEs: {fes}, Best Fitness: {best_fitness:.6f}", end='\r')
 
-    return best_solution.cpu(), best_fitness, history
+        # -----------------------
+        # 3) Ordenar y actualizar distribución
+        # -----------------------
+        sorted_idx = th.argsort(fit)
+        elites = xs[sorted_idx[:mu]]
+        z_elites = z[sorted_idx[:mu]]
+
+        # Nueva media
+        m_old = m.clone()
+        m = (weights.unsqueeze(1) * elites).sum(dim=0)
+
+        # Actualización de caminos
+        y_w = (weights.unsqueeze(1) * z_elites).sum(dim=0)
+
+        # Camino de sigma
+        C_inv_sqrt = B @ th.diag(1.0 / D) @ B.T
+        p_sigma = (1 - c_sigma) * p_sigma + math.sqrt(c_sigma * (2 - c_sigma) * mu_eff) * (C_inv_sqrt @ (m - m_old) / sigma)
+
+        # Actualización de sigma
+        norm_p_sigma = p_sigma.norm()
+        sigma *= math.exp((c_sigma / d_sigma) * (norm_p_sigma / expected_norm - 1))
+
+        # Camino de covarianza
+        h_sigma_cond = norm_p_sigma / math.sqrt(1 - (1 - c_sigma) ** (2 * fes / lam)) < (1.4 + 2 / (dim + 1)) * expected_norm
+        h_sigma = 1.0 if h_sigma_cond else 0.0
+        p_c = (1 - c_c) * p_c + h_sigma * math.sqrt(c_c * (2 - c_c) * mu_eff) * ((m - m_old) / sigma)
+
+        # Actualización de C
+        rank_one = p_c.unsqueeze(1) @ p_c.unsqueeze(0)
+        rank_mu = th.zeros_like(C)
+        for k in range(mu):
+            dz = z_elites[k].unsqueeze(1)
+            rank_mu += weights[k] * (dz @ dz.T)
+
+        C = (1 - c1 - c_mu) * C + c1 * rank_one + c_mu * rank_mu
+
+        # Forzar simetría numérica
+        C = 0.5 * (C + C.T)
+
+        print(f"CMA-ES FEs: {fes}, Best Fitness: {best_fitness:.6f}", end="\r")
+
+    return best_solution.detach().cpu(), best_fitness, history
+
 
 # -----------------------------
-# Cuckoo Search (CS)
+# Hybrid PSO + L-BFGS (4º algoritmo)
 # -----------------------------
-def cuckoo_search_parallel(
+def hybrid_pso_lbfgs_parallel(
     fitness_func_batch, dim, bounds,
-    max_fes=None, pop_size=None, pa=None, beta=None,
-    step_scale=None
+    max_fes=None, pop_size=None,
+    w=None, c1=None, c2=None,
+    w_start=None, w_end=None, vmax_frac=None,
+    global_frac=None, max_local_iters=None,
+    lbfgs_lr=None
 ):
-    cs_cfg = ALGORITHM_CONFIGS.get('CS', {})
-    max_fes = max_fes if max_fes is not None else OPTIMIZATION_CONFIG.get('max_fes', 10000)
-    pop_size = pop_size if pop_size is not None else cs_cfg.get('pop_size', 50)
-    pa = pa if pa is not None else cs_cfg.get('pa', 0.25)
-    beta = beta if beta is not None else cs_cfg.get('beta', 1.5)
-    step_scale = step_scale if step_scale is not None else cs_cfg.get('step_scale', 0.02)  # ↑ paso base
+    """
+    Fase 1: PSO global en batch.
+    Fase 2: refinamiento local con L-BFGS sobre la mejor solución encontrada.
+    """
 
-    bounds = th.tensor(bounds, dtype=th.float32, device=device)
-    lower, upper = bounds[:, 0], bounds[:, 1]
+    hyb_cfg = ALGORITHM_CONFIGS.get("HYBRID_PSO_LBFGS", {})
+    pso_cfg = ALGORITHM_CONFIGS.get("PSO", {})
 
-    nests = th.rand(pop_size, dim, device=device) * (upper - lower) + lower
-    fitness = fitness_func_batch(nests)
-    fes = pop_size
+    max_fes = max_fes if max_fes is not None else OPTIMIZATION_CONFIG.get("max_fes", 10000)
+    pop_size = pop_size if pop_size is not None else pso_cfg.get("pop_size", 60)
 
-    best_idx = th.argmin(fitness)
-    best_nest = nests[best_idx].clone()
-    best_fitness = fitness[best_idx].item()
-    history = [best_fitness]
+    # Parámetros PSO
+    w = w if w is not None else pso_cfg.get("w", 0.7298)
+    c1 = c1 if c1 is not None else pso_cfg.get("c1", 1.49618)
+    c2 = c2 if c2 is not None else pso_cfg.get("c2", 1.49618)
+    w_start = w_start if w_start is not None else pso_cfg.get("w_start", 0.8)
+    w_end = w_end if w_end is not None else pso_cfg.get("w_end", 0.5)
+    vmax_frac = vmax_frac if vmax_frac is not None else pso_cfg.get("vmax_frac", 0.1)
 
-    while fes < max_fes:
-        # Programación suave del abandono para explorar más al inicio
-        progress = float(fes) / float(max_fes)
-        pa_eff = min(0.6, max(0.15, pa + 0.2 * (0.5 - progress)))  # más abandono al inicio
+    # Parámetros de hibridación
+    global_frac = global_frac if global_frac is not None else hyb_cfg.get("global_frac", 0.8)
+    max_local_iters = max_local_iters if max_local_iters is not None else hyb_cfg.get("max_local_iters", 30)
+    lbfgs_lr = lbfgs_lr if lbfgs_lr is not None else hyb_cfg.get("lbfgs_lr", 1.0)
 
-        steps = levy_flight_batch(pop_size, dim, beta, device)
-        step_sizes = step_scale * steps * (nests - best_nest.unsqueeze(0))
-        new_nests = th.clamp(nests + step_sizes * th.randn(pop_size, dim, device=device), lower, upper)
+    max_fes_global = int(max_fes * global_frac)
+    max_fes_global = max(pop_size, max_fes_global)
+    max_fes_local = max_fes - max_fes_global
 
-        if fes + pop_size <= max_fes:
-            new_fitness = fitness_func_batch(new_nests)
-            fes += pop_size
-        else:
-            remaining = max_fes - fes
-            new_fitness = fitness_func_batch(new_nests[:remaining])
-            new_fitness = th.cat([new_fitness, fitness[remaining:]])
-            fes = max_fes
+    # -------------------------
+    # Fase global: PSO
+    # -------------------------
+    print("\n[HYBRID] Fase global PSO...")
+    gbest, gbest_fitness, pso_history = particle_swarm_optimization_parallel(
+        fitness_func_batch, dim, bounds,
+        max_fes=max_fes_global,
+        pop_size=pop_size,
+        w=w, c1=c1, c2=c2,
+        w_start=w_start, w_end=w_end,
+        vmax_frac=vmax_frac
+    )
 
-        improved = new_fitness < fitness
-        nests = th.where(improved.unsqueeze(1), new_nests, nests)
-        fitness = th.where(improved, new_fitness, fitness)
+    # -------------------------
+    # Fase local: L-BFGS
+    # -------------------------
+    print("\n[HYBRID] Fase local L-BFGS...")
+    bounds_t = th.tensor(bounds, dtype=th.float32, device=device)
+    lower, upper = bounds_t[:, 0], bounds_t[:, 1]
 
-        current_best_idx = th.argmin(fitness)
-        if fitness[current_best_idx] < best_fitness:
-            best_fitness = fitness[current_best_idx].item()
-            best_nest = nests[current_best_idx].clone()
+    x0 = gbest.to(device=device, dtype=th.float32)
 
-        # Abandono de peores nidos
-        num_abandon = int(pa_eff * pop_size)
-        if num_abandon > 0:
-            if fes + num_abandon <= max_fes:
-                worst_indices = th.argsort(fitness, descending=True)[:num_abandon]
-                nests[worst_indices] = th.rand(num_abandon, dim, device=device) * (upper - lower) + lower
-                fitness[worst_indices] = fitness_func_batch(nests[worst_indices])
-                fes += num_abandon
-            # actualizar mejor
-            current_best_idx = th.argmin(fitness)
-            if fitness[current_best_idx] < best_fitness:
-                best_fitness = fitness[current_best_idx].item()
-                best_nest = nests[current_best_idx].clone()
+    x_opt, f_opt, local_history = _lbfgs_local_refinement(
+        fitness_func_batch,
+        x0,
+        lower,
+        upper,
+        max_iters=max_local_iters,
+        lr=lbfgs_lr,
+        max_local_fes=max_fes_local if max_fes_local > 0 else None
+    )
 
-        history.append(best_fitness)
-        print(f"FEs: {fes}, Best Fitness: {best_fitness:.6f}", end='\r')
+    history = pso_history + local_history
 
-    return best_nest.cpu(), best_fitness, history
+    return x_opt.detach().cpu(), float(f_opt), history
 
-# Helpers: Lévy flights
-def levy_flight_batch(batch_size, dim, beta, device):
-    # Estimación de sigma_u para Lévy (Mantegna)
-    sigma_u = (th.exp(th.lgamma(th.tensor(1+beta, device=device)) -
-                      th.lgamma(th.tensor((1+beta)/2, device=device))) *
-               th.sin(th.tensor(np.pi*beta/2, device=device)) /
-               (((beta-1)/2) * beta * 2**((beta-1)/2)))**(1/beta)
-    u = th.randn(batch_size, dim, device=device) * sigma_u
-    v = th.randn(batch_size, dim, device=device)
-    step = u / th.abs(v)**(1/beta)
-    return step
+
+def _lbfgs_local_refinement(
+    fitness_func_batch,
+    x0: th.Tensor,
+    lower: th.Tensor,
+    upper: th.Tensor,
+    max_iters: int = 30,
+    lr: float = 1.0,
+    max_local_fes: Optional[int] = None,   # o simplemente max_local_fes=None
+):
+    """
+    Refinamiento local sobre un solo vector de parámetros usando L-BFGS de PyTorch.
+    """
+
+    x = x0.clone().detach().to(device)
+    x.requires_grad_(True)
+
+    optimizer = th.optim.LBFGS(
+        [x],
+        lr=lr,
+        max_iter=max_iters,
+        history_size=10,
+        line_search_fn="strong_wolfe",
+    )
+
+    history = []
+    eval_count = 0
+
+    def closure():
+        nonlocal eval_count
+        optimizer.zero_grad()
+
+        x_clamped = th.clamp(x, lower, upper)
+        f = fitness_func_batch(x_clamped.unsqueeze(0))[0]
+        f.backward()
+
+        eval_count += 1
+        history.append(f.item())
+
+        # Aquí podrías comprobar max_local_fes si quisieras cortar antes
+        return f
+
+    optimizer.step(closure)
+
+    x_clamped = th.clamp(x.detach(), lower, upper)
+    f_final = fitness_func_batch(x_clamped.unsqueeze(0))[0].item()
+    history.append(f_final)
+
+    return x_clamped, f_final, history

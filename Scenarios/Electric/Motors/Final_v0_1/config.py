@@ -4,36 +4,51 @@ Configuraciones generales del proyecto
 
 import math
 
-# ============================================
 # PARÁMETROS DEL MOTOR
-# ============================================
+
 
 # Parámetros verdaderos (valores de referencia para validación)
-TRUE_PARAMS = {
-    'rs': 0.435,
-    'rr': 0.816,
-    'Lls': 0.002,
-    'Llr': 0.002,
-    'Lm': 0.0693,
-    'J': 0.089,
-    'B': 0.0001
+TRUE_PARAMS = { # Parametros para motore entre 2 a 3 kW
+    'rs':  0.70,       # ohm
+    'rr':  0.50,       # ohm (referido al estator)
+    'Lls': 0.0030,     # H
+    'Llr': 0.0030,     # H
+    'Lm':  0.0800,     # H
+    'J':   0.012,      # kg·m^2
+    'B':   1.4e-3      # N·m·s/rad
 }
 
-PARAM_NAMES = ['rs', 'rr', 'Lls', 'Llr', 'Lm', 'J', 'B']
+PARAM_NAMES = [
+    'rs', 
+    'rr', 
+    'Lls', 
+    'Llr', 
+    'Lm', 
+    'J', 
+    'B'
+    ]
 
 NAMEPLATE = {
     'rated_power_kw': 2.2,       # kW de salida nominal
     'rated_speed_rpm': 1710.0,   # rpm nominal
     'rated_efficiency': 0.85,    # eficiencia nominal (0..1)
-    'friction_frac_of_output': 0.02  # 2% de P_out ~ P_fw típico 1–3%
+    'friction_frac_of_output': 0.02,  # 2% de P_out ~ P_fw típico 1–3%
+
+    'rated_voltage_ll': 220.0,  # tensión línea-línea RMS
+    'power_factor': 0.82,   # cos φ típico a plena carga
+    'imag_frac': 0.30  # corriente de magnetización ~30% de la corriente nominal
 }
 
 # Pesos y factores del prior de B
 PRIORS_CONFIG = {
     'use_b_prior': True,
-    'b_prior_weight': 0.5,   # peso de regularización del prior en el fitness
-    'b_bounds_low': 0.5,     # límites = [low, high] * B_prior
-    'b_bounds_high': 2.0
+    'b_prior_weight': 1.0,   # peso de regularización del prior en el fitness / 0.5
+    'b_bounds_low': 0.5,     # límites = [low, high] * B_prior / 0.5
+    'b_bounds_high': 2.0,  # / 2.0
+
+    # prior sobre Lm ---
+    'uselmprior': True,       # activar/desactivar prior de Lm
+    'lmpriorweight': 0.3,
 }
 
 # Límites de búsqueda para cada parámetro
@@ -55,12 +70,18 @@ MOTOR_VOLTAGE = {
     'vds': 0.0
 }
 
-# ============================================
+# CONFIGURACIÓN DE EXPERIMENTOS
+
+EXPERIMENT_CONFIG = {
+    'num_runs': 1,         # Número de ejecuciones por algoritmo
+    'base_seed': 40,        # Semilla base para reproducibilidad
+    'save_frequency': 5,    # Guardar cada N runs
+}
+
 # CONFIGURACIÓN DE OPTIMIZACIÓN
-# ============================================
 
 OPTIMIZATION_CONFIG = {
-    'max_fes': 1000,       # Evaluaciones de función máximas
+    'max_fes': 3000,       # Evaluaciones de función máximas
     'time_total': 1,      # Tiempo total de simulación en segundos
     'time_steps': 1000,      # Pasos de tiempo para ODE (balance velocidad/precisión) 
     'rtol': 1e-3,          # Tolerancia relativa ODE
@@ -87,7 +108,7 @@ ALGORITHM_CONFIGS = {
         'eta_m': 15,
         'immigrants_frac': 0.15,
         'stagnation_gens': 6,
-        'color': '#FF6B6B'
+        'color': '#1f77b4'
     },
     'PSO': {
         'name': 'Particle Swarm Optimization',
@@ -97,37 +118,33 @@ ALGORITHM_CONFIGS = {
         'w': 0.7298,           # Peso de inercia
         'c1': 1.49618,         # Coeficiente cognitivo
         'c2': 1.49618,         # Coeficiente social
-        'color': '#4ECDC4'
+        'color': '#ff7f0e'
     },
-    'DE': {
-        'name': 'Differential Evolution',
-        'short_name': 'DE',
-        'max_fes': OPTIMIZATION_CONFIG['max_fes'],
-        'pop_size': 80,
-        'F': 0.5,              # Factor de mutación
-        'CR': 0.9,             # Tasa de cruce
-        'color': '#95E1D3'
+    "CMAES": {
+        "name": "CMA-ES",
+        "short_name": "CMAES",
+        "max_fes": OPTIMIZATION_CONFIG["max_fes"],
+        # si no especificas popsize/mu,sigma0 se calculan en el código
+        "pop_size": 16,
+        "mu": 8,
+        "sigma0": 0.3,
+        "color": "#2ca02c",
     },
-    'CS': {
-        'name': 'Cuckoo Search',
-        'short_name': 'CS',
-        'max_fes': OPTIMIZATION_CONFIG['max_fes'],
-        'pop_size': 50,
-        'pa': 0.25,            # Probabilidad de abandono
-        'beta': 1.5,           # Exponente de Levy
-        'color': '#F38181'
-    }
+
+    # ---------- 4º algoritmo: PSO + L-BFGS ----------
+    "HYBRID_PSO_LBFGS": {
+        "name": "PSO + L-BFGS",
+        "short_name": "HYB",
+        "max_fes": OPTIMIZATION_CONFIG["max_fes"],
+        "pop_size": 60,
+        "global_frac": 0.8,      # 80% FEs PSO, 20% L-BFGS
+        "max_local_iters": 30,
+        "lbfgs_lr": 1.0,
+        "color": "#d62728",
+    },
+
 }
 
-# ============================================
-# CONFIGURACIÓN DE EXPERIMENTOS
-# ============================================
-
-EXPERIMENT_CONFIG = {
-    'num_runs': 1,         # Número de ejecuciones por algoritmo
-    'base_seed': 42,        # Semilla base para reproducibilidad
-    'save_frequency': 5,    # Guardar cada N runs
-}
 
 # ============================================
 # FASES DEL PROYECTO
