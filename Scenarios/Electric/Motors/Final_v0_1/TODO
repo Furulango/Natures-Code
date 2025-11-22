@@ -1,5 +1,9 @@
 # TODO 
 
-- Revisar estrategia híbrida PSO + L-BFGS (HYBRID_PSO_LBFGS): parece estancarse.
+- Revisar estrategia híbrida PSO + L-BFGS (HYBRID_PSO_LBFGS): completado.
 
-- Revisar CMA-ES (CMAES): iteraciones muy lentas.
+- Revisar CMA-ES (CMAES): iteraciones muy lentas: Se elimino el algoritmo.
+
+- Revisar estrategia Bee Memetic 3-Level (BEE_MEMETIC) : pendiente
+    * Se queda atascado en [BEE] Neigh FEs: 1149, Best Fitness: 0.006938
+    

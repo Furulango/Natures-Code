@@ -217,153 +217,196 @@ def particle_swarm_optimization_parallel(
 # -----------------------------
 # CMA-ES (3er algoritmo)
 # -----------------------------
-def cma_es_parallel(
+
+def bee_memetic_parallel(
     fitness_func_batch,
     dim,
     bounds,
     max_fes=None,
-    pop_size=None,
-    mu=None,         
-    sigma0=None,
-    **kwargs,        
+    pop_size=None, 
+    **kwargs,      
 ):
     """
-    CMA-ES continuo, versión vectorizada en PyTorch.
-    Se adapta muy bien a problemas de baja dimensión como este.
+    Algoritmo bioinspirado tipo 'abejas memético' en 3 niveles:
+    1) Exploración global por abejas exploradoras.
+    2) Exploración intermedia en sitios prometedores (vecindarios).
+    3) Refinamiento local con L-BFGS en los mejores sitios.
     """
 
-    cma_cfg = ALGORITHM_CONFIGS.get("CMAES", {})
+    bee_cfg = ALGORITHM_CONFIGS.get("BEE_MEMETIC", {})
     max_fes = max_fes if max_fes is not None else OPTIMIZATION_CONFIG.get("max_fes", 10000)
+
+    # Config por defecto (puedes afinarlos en config.py)
+    global_frac = bee_cfg.get("global_frac", 0.3)      # FEs para fase global
+    neigh_frac  = bee_cfg.get("neigh_frac", 0.4)       # FEs para fase intermedia
+    local_frac  = 1.0 - global_frac - neigh_frac       # resto para L-BFGS
+
+    n_scouts    = bee_cfg.get("n_scouts", 200)         # muestras globales
+    n_sites     = bee_cfg.get("n_sites", 10)           # sitios a explorar
+    n_elite     = bee_cfg.get("n_elite", 3)            # sitios "élite"
+    neigh_elite = bee_cfg.get("neigh_elite", 20)       # vecinos por sitio élite
+    neigh_other = bee_cfg.get("neigh_other", 10)       # vecinos por sitios normales
+
+    max_local_iters = bee_cfg.get("max_local_iters", 10)
+    lbfgs_lr        = bee_cfg.get("lbfgs_lr", 1.0)
 
     bounds_t = th.tensor(bounds, dtype=th.float32, device=device)
     lower, upper = bounds_t[:, 0], bounds_t[:, 1]
     span = upper - lower
 
-    # Tamaño de población (lambda) típico: 4 + int(3 * log(dim))
-    if pop_size is None:
-        pop_size = cma_cfg.get("pop_size", 4 + int(3 * math.log(dim + 1)))
-    lam = pop_size
-
-    # Parámetros de pesos (μ y pesos recombinación)
-    mu = cma_cfg.get("mu", lam // 2)
-    weights = th.tensor(
-        [math.log(mu + 0.5) - math.log(i + 1) for i in range(mu)],
-        dtype=th.float32,
-        device=device
-    )
-    weights = weights / weights.sum()
-    mu_eff = (weights.sum() ** 2) / (weights ** 2).sum()
-
-    # Parámetros de adaptación estándar CMA-ES
-    c_sigma = cma_cfg.get("c_sigma", (mu_eff + 2) / (dim + mu_eff + 5))
-    d_sigma = cma_cfg.get("d_sigma", 1 + 2 * max(0, math.sqrt((mu_eff - 1) / (dim + 1)) - 1) + c_sigma)
-    c_c = cma_cfg.get("c_c", (4 + mu_eff / dim) / (dim + 4 + 2 * mu_eff / dim))
-    c1 = cma_cfg.get("c1", 2 / ((dim + 1.3) ** 2 + mu_eff))
-    c_mu = cma_cfg.get("c_mu", min(1 - c1, 2 * (mu_eff - 2 + 1 / mu_eff) / ((dim + 2) ** 2 + mu_eff)))
-
-    # Sigma inicial
-    if sigma0 is None:
-        sigma0 = cma_cfg.get("sigma0", 0.3)
-    sigma = sigma0 * span.mean().item()
-
-    # Inicializar media en el centro del hipercubo
-    m = (lower + upper) / 2.0
-
-    # Matriz de covarianza inicial identidad
-    C = th.eye(dim, device=device)
-    p_sigma = th.zeros(dim, device=device)
-    p_c = th.zeros(dim, device=device)
-
     history = []
-    fes = 0
 
-    # Factor de expectativa de norma de N(0, I)
-    expected_norm = math.sqrt(dim) * (1 - 1 / (4 * dim) + 1 / (21 * dim * dim))
+    # -------------------------
+    # 1) Fase global: exploradoras
+    # -------------------------
+    max_fes_global = int(max_fes * global_frac)
+    max_fes_global = max(n_scouts, max_fes_global)
 
-    best_solution = None
-    best_fitness = float("inf")
+    # número real de scouts limitado por presupuesto
+    n_scouts_eff = min(n_scouts, max_fes_global)
+    scouts = th.rand(n_scouts_eff, dim, device=device) * span + lower
+    
+    fitness_scouts = fitness_func_batch(scouts)
+    fes = n_scouts_eff
 
-    while fes < max_fes:
-        # -----------------------
-        # 1) Muestreo de población
-        # -----------------------
-        # Descomponer C = B D^2 B^T
-        eigvals, eigvecs = th.linalg.eigh(C)
-        eigvals = th.clamp(eigvals, min=1e-12)
-        D = th.sqrt(eigvals)
-        B = eigvecs
-        BD = B * D.unsqueeze(0)  # columnas escaladas
+    # ordenar mejores sitios
+    sorted_idx = th.argsort(fitness_scouts)
+    best_idx_sites = sorted_idx[:min(n_sites, n_scouts_eff)]
+    sites = scouts[best_idx_sites]
+    sites_f = fitness_scouts[best_idx_sites]
 
-        # Generar lam muestras: x_k = m + sigma * BD * z_k
-        z = th.randn(lam, dim, device=device)
-        y = z @ BD.T
-        xs = m.unsqueeze(0) + sigma * y
-        xs = th.clamp(xs, lower, upper)
+    best_solution = sites[0].clone()
+    best_fitness = sites_f[0].item()
+    history.append(best_fitness)
 
-        # -----------------------
-        # 2) Evaluación en batch
-        # -----------------------
-        if fes + lam <= max_fes:
-            fit = fitness_func_batch(xs)
-            fes += lam
-        else:
-            remaining = max_fes - fes
-            fit_part = fitness_func_batch(xs[:remaining])
-            pad = th.full((lam - remaining,), float("inf"), device=device)
-            fit = th.cat([fit_part, pad])
-            fes = max_fes
+    print(f"[BEE] Global FEs: {fes}, Best Fitness: {best_fitness:.6f}", end="\r")
 
-        # Actualizar mejor global
-        cur_best_idx = th.argmin(fit)
-        cur_best_fit = fit[cur_best_idx].item()
-        if cur_best_fit < best_fitness:
-            best_fitness = cur_best_fit
-            best_solution = xs[cur_best_idx].clone()
+    # -------------------------
+    # 2) Fase intermedia: sitios y vecindarios
+    # -------------------------
+    max_fes_neigh = int(max_fes * neigh_frac)
+    max_fes_neigh = max(0, max_fes_neigh)
+    fes_neigh_used = 0
+
+    # radio inicial de vecindario (por ejemplo 10% del rango)
+    neigh_radius_init = 0.1 * span
+    neigh_radius = neigh_radius_init.clone()
+
+    # índice de sitios élite y normales
+    n_sites_eff = sites.shape[0]
+    n_elite_eff = min(n_elite, n_sites_eff)
+    elite_sites = sites[:n_elite_eff]
+    elite_f     = sites_f[:n_elite_eff]
+    other_sites = sites[n_elite_eff:]
+    other_f     = sites_f[n_elite_eff:]
+
+    all_neigh_solutions = []
+    all_neigh_fitness   = []
+
+    while fes < max_fes and fes_neigh_used < max_fes_neigh and n_sites_eff > 0:
+        # generar vecinos para sitios élite
+        if elite_sites.shape[0] > 0:
+            n_elite_sites = elite_sites.shape[0]
+            n_neigh_elite = min(neigh_elite, (max_fes_neigh - fes_neigh_used) // max(1, n_elite_sites))
+            if n_neigh_elite > 0:
+                noise_elite = (th.rand(n_elite_sites, n_neigh_elite, dim, device=device) - 0.5) * 2.0
+                neigh_elite_pop = elite_sites.unsqueeze(1) + noise_elite * neigh_radius.unsqueeze(0).unsqueeze(1)
+                neigh_elite_pop = th.clamp(neigh_elite_pop, lower, upper)
+                neigh_elite_pop = neigh_elite_pop.reshape(-1, dim)
+
+                f_elite = fitness_func_batch(neigh_elite_pop)
+                fes += neigh_elite_pop.shape[0]
+                fes_neigh_used += neigh_elite_pop.shape[0]
+
+                all_neigh_solutions.append(neigh_elite_pop)
+                all_neigh_fitness.append(f_elite)
+
+        # generar vecinos para sitios no élite
+        if other_sites.shape[0] > 0 and fes_neigh_used < max_fes_neigh:
+            n_other_sites = other_sites.shape[0]
+            n_neigh_other = min(neigh_other, (max_fes_neigh - fes_neigh_used) // max(1, n_other_sites))
+            if n_neigh_other > 0:
+                noise_other = (th.rand(n_other_sites, n_neigh_other, dim, device=device) - 0.5) * 2.0
+                neigh_other_pop = other_sites.unsqueeze(1) + noise_other * neigh_radius.unsqueeze(0).unsqueeze(1)
+                neigh_other_pop = th.clamp(neigh_other_pop, lower, upper)
+                neigh_other_pop = neigh_other_pop.reshape(-1, dim)
+
+                f_other = fitness_func_batch(neigh_other_pop)
+                fes += neigh_other_pop.shape[0]
+                fes_neigh_used += neigh_other_pop.shape[0]
+
+                all_neigh_solutions.append(neigh_other_pop)
+                all_neigh_fitness.append(f_other)
+
+        if len(all_neigh_solutions) == 0:
+            break
+
+        # actualizar mejor global con todos los vecinos generados hasta ahora
+        neigh_solutions = th.cat(all_neigh_solutions, dim=0)
+        neigh_fitness = th.cat(all_neigh_fitness, dim=0)
+        cur_idx = th.argmin(neigh_fitness)
+        cur_fit = neigh_fitness[cur_idx].item()
+        if cur_fit < best_fitness:
+            best_fitness = cur_fit
+            best_solution = neigh_solutions[cur_idx].clone()
 
         history.append(best_fitness)
+        print(f"[BEE] Neigh FEs: {fes}, Best Fitness: {best_fitness:.6f}", end="\r")
 
-        # -----------------------
-        # 3) Ordenar y actualizar distribución
-        # -----------------------
-        sorted_idx = th.argsort(fit)
-        elites = xs[sorted_idx[:mu]]
-        z_elites = z[sorted_idx[:mu]]
+        # opcional: reducir radio de vecindario para exploración más fina
+        neigh_radius = neigh_radius * 0.7
 
-        # Nueva media
-        m_old = m.clone()
-        m = (weights.unsqueeze(1) * elites).sum(dim=0)
+        # re-seleccionar sitios a partir de todos los vecinos
+        all_sites = th.cat([sites, neigh_solutions], dim=0)
+        all_sites_f = th.cat([sites_f, neigh_fitness], dim=0)
+        sorted_idx = th.argsort(all_sites_f)
+        best_idx_sites = sorted_idx[:min(n_sites, all_sites.shape[0])]
+        sites = all_sites[best_idx_sites]
+        sites_f = all_sites_f[best_idx_sites]
 
-        # Actualización de caminos
-        y_w = (weights.unsqueeze(1) * z_elites).sum(dim=0)
+        n_sites_eff = sites.shape[0]
+        if n_sites_eff == 0:
+            break
 
-        # Camino de sigma
-        C_inv_sqrt = B @ th.diag(1.0 / D) @ B.T
-        p_sigma = (1 - c_sigma) * p_sigma + math.sqrt(c_sigma * (2 - c_sigma) * mu_eff) * (C_inv_sqrt @ (m - m_old) / sigma)
+        n_elite_eff = min(n_elite, n_sites_eff)
+        elite_sites = sites[:n_elite_eff]
+        elite_f     = sites_f[:n_elite_eff]
+        other_sites = sites[n_elite_eff:]
+        other_f     = sites_f[n_elite_eff:]
 
-        # Actualización de sigma
-        norm_p_sigma = p_sigma.norm()
-        sigma *= math.exp((c_sigma / d_sigma) * (norm_p_sigma / expected_norm - 1))
+    # -------------------------
+    # 3) Fase local: L-BFGS en mejores sitios
+    # -------------------------
+    max_fes_local_total = max_fes - fes
+    if max_fes_local_total <= 0 or sites.shape[0] == 0:
+        return best_solution.detach().cpu(), best_fitness, history
 
-        # Camino de covarianza
-        h_sigma_cond = norm_p_sigma / math.sqrt(1 - (1 - c_sigma) ** (2 * fes / lam)) < (1.4 + 2 / (dim + 1)) * expected_norm
-        h_sigma = 1.0 if h_sigma_cond else 0.0
-        p_c = (1 - c_c) * p_c + h_sigma * math.sqrt(c_c * (2 - c_c) * mu_eff) * ((m - m_old) / sigma)
+    n_local_starts = bee_cfg.get("n_local_starts", 3)
+    n_local_starts = min(n_local_starts, sites.shape[0])
 
-        # Actualización de C
-        rank_one = p_c.unsqueeze(1) @ p_c.unsqueeze(0)
-        rank_mu = th.zeros_like(C)
-        for k in range(mu):
-            dz = z_elites[k].unsqueeze(1)
-            rank_mu += weights[k] * (dz @ dz.T)
+    max_fes_per_start = max_fes_local_total // n_local_starts
 
-        C = (1 - c1 - c_mu) * C + c1 * rank_one + c_mu * rank_mu
+    for i in range(n_local_starts):
+        x0 = sites[i]
+        x_opt, f_opt, local_hist = _lbfgs_local_refinement(
+            fitness_func_batch,
+            x0,
+            lower,
+            upper,
+            max_iters=max_local_iters,
+            lr=lbfgs_lr,
+            max_local_fes=max_fes_per_start,
+            fes_start=fes,
+        )
+        # aprox: sumamos el número de evaluaciones locales
+        fes += len(local_hist)
+        if f_opt < best_fitness:
+            best_fitness = f_opt
+            best_solution = x_opt.clone()
+        history.extend(local_hist)
+        print(f"[BEE] Local FEs: {fes}, Best Fitness: {best_fitness:.6f}", end="\r")
 
-        # Forzar simetría numérica
-        C = 0.5 * (C + C.T)
-
-        print(f"CMA-ES FEs: {fes}, Best Fitness: {best_fitness:.6f}", end="\r")
-
-    return best_solution.detach().cpu(), best_fitness, history
+    return best_solution.detach().cpu(), float(best_fitness), history
 
 
 # -----------------------------
@@ -434,8 +477,10 @@ def hybrid_pso_lbfgs_parallel(
         upper,
         max_iters=max_local_iters,
         lr=lbfgs_lr,
-        max_local_fes=max_fes_local if max_fes_local > 0 else None
+        max_local_fes=max_fes_local if max_fes_local > 0 else None,
+        fes_start=max_fes_global,
     )
+
 
     history = pso_history + local_history
 
@@ -447,9 +492,10 @@ def _lbfgs_local_refinement(
     x0: th.Tensor,
     lower: th.Tensor,
     upper: th.Tensor,
-    max_iters: int = 30,
-    lr: float = 1.0,
-    max_local_fes: Optional[int] = None,   # o simplemente max_local_fes=None
+    max_iters=10,
+    lr=1.0,
+    max_local_fes=None,
+    fes_start=0,
 ):
     """
     Refinamiento local sobre un solo vector de parámetros usando L-BFGS de PyTorch.
@@ -468,25 +514,34 @@ def _lbfgs_local_refinement(
 
     history = []
     eval_count = 0
+    best_local = float("inf")  # <-- definida en el scope externo
 
     def closure():
-        nonlocal eval_count
+        nonlocal eval_count, best_local  # ahora sí existe en el scope externo
         optimizer.zero_grad()
-
         x_clamped = th.clamp(x, lower, upper)
         f = fitness_func_batch(x_clamped.unsqueeze(0))[0]
         f.backward()
-
         eval_count += 1
+
+        if f.item() < best_local:
+            best_local = f.item()
+
+        total_fes = fes_start + eval_count
         history.append(f.item())
 
-        # Aquí podrías comprobar max_local_fes si quisieras cortar antes
+        print(f"FEs: {total_fes}, Best Fitness: {best_local:.6e}", end="\r")
         return f
 
-    optimizer.step(closure)
+    for it in range(max_iters):
+        if max_local_fes is not None and eval_count >= max_local_fes:
+            print(f"\n[L-BFGS] Cortando por max_local_fes={max_local_fes}")
+            break
+        optimizer.step(closure)
 
     x_clamped = th.clamp(x.detach(), lower, upper)
     f_final = fitness_func_batch(x_clamped.unsqueeze(0))[0].item()
     history.append(f_final)
-
+    print(f"\n[HYBRID L-BFGS] Final FEs: {fes_start + eval_count}, Best Fitness: {best_local:.6e}")
     return x_clamped, f_final, history
+

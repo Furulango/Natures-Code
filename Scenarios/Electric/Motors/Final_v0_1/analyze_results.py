@@ -34,7 +34,7 @@ def load_algorithm_results(results_dir, algorithm_name):
     """
     filepath = os.path.join(results_dir, f"{algorithm_name}_results.json")
     if not os.path.exists(filepath):
-        print(f"❌ No se encontró: {filepath}")
+        print(f"No se encontró: {filepath}")
         return None
 
     with open(filepath, 'r') as f:
@@ -64,21 +64,21 @@ def print_detailed_statistics(algorithm_name, data):
     """
     Imprime estadísticas detalladas de un algoritmo
     """
-    print(f"\n{'='*70}")
-    print(f"📊 {algorithm_name} - ANÁLISIS DETALLADO")
-    print(f"{'='*70}")
+    print(f"\n{'-'*70}")
+    print(f" {algorithm_name}")
+    print(f"{'-'*70}")
 
     runs = data['runs']
     stats = data['statistics']
 
     # Información general
-    print(f"\n🔢 Información General:")
+    print(f"\n Información General:")
     print(f"   Total de runs: {len(runs)}")
     print(f"   Tiempo promedio por run: {stats['execution_time']['mean']:.2f}s")
     print(f"   Tiempo total: {stats['execution_time']['total']/60:.2f} min")
 
     # Estadísticas de fitness
-    print(f"\n📈 Fitness:")
+    print(f"\n Fitness:")
     fs = stats['fitness']
     print(f"   Mean ± Std:  {fs['mean']:.6f} ± {fs['std']:.6f}")
     print(f"   Median:      {fs['median']:.6f}")
@@ -88,7 +88,7 @@ def print_detailed_statistics(algorithm_name, data):
     print(f"   CV:          {fs['cv']:.4f}")
 
     # Estadísticas por parámetro
-    print(f"\n🎯 Error de Parámetros (%):")
+    print(f"\n Error de Parámetros (%):")
     print(f"   {'Parámetro':<10} {'Mean':<10} {'Std':<10} {'Min':<10} {'Max':<10}")
     print(f"   {'-'*50}")
 
@@ -101,14 +101,14 @@ def print_detailed_statistics(algorithm_name, data):
               f"{ps['max']:>9.2f}")
 
     # Convergencia
-    print(f"\n📉 Convergencia:")
+    print(f"\n Convergencia:")
     convergences = [run['final_generation'] for run in runs]
     stagnations = [run['stagnation_count'] for run in runs]
     print(f"   Generaciones promedio: {np.mean(convergences):.1f}")
     print(f"   Estancamiento promedio: {np.mean(stagnations):.1f} generaciones")
 
     # Mejor solución
-    print(f"\n🏆 Mejor Solución (Run {get_best_run(runs)}):")
+    print(f"\n Mejor Solución (Run {get_best_run(runs)}):")
     best_run = runs[get_best_run(runs) - 1]
     print(f"   Fitness: {best_run['best_fitness']:.6f}")
     print(f"   Parámetros:")
@@ -122,11 +122,11 @@ def compare_algorithms(results_dir):
     """
     Compara todos los algoritmos
     """
-    algorithms = ['GA', 'PSO', 'DE', 'CS']
+    algorithms = ['GA', 'PSO', 'HYBRID_PSO_LBFGS', 'BEE_MEMETIC']
 
-    print(f"\n{'='*70}")
-    print(f"🔬 COMPARACIÓN DE ALGORITMOS")
-    print(f"{'='*70}\n")
+    print(f"\n{'-'*70}")
+    print(f" COMPARACIÓN DE ALGORITMOS")
+    print(f"{'-'*70}\n")
 
     # Tabla comparativa
     print(f"{'Algoritmo':<12} {'Mean':<12} {'Std':<12} {'Best':<12} {'Median':<12} {'CV':<10}")
@@ -153,17 +153,17 @@ def compare_algorithms(results_dir):
 
     # Ranking
     if all_stats:
-        print("🏆 Ranking (por fitness promedio):")
+        print(" Ranking (por fitness promedio):")
         ranked = sorted(all_stats.items(), key=lambda x: x[1]['mean'])
         for i, (algo, stats) in enumerate(ranked, 1):
             print(f"   {i}. {algo:<6} - {stats['mean']:.6f}")
 
-        print("\n🎯 Ranking (por mejor solución):")
+        print("\n Ranking (por mejor solución):")
         ranked_best = sorted(all_stats.items(), key=lambda x: x[1]['min'])
         for i, (algo, stats) in enumerate(ranked_best, 1):
             print(f"   {i}. {algo:<6} - {stats['min']:.6f}")
 
-        print("\n📊 Ranking (por robustez - menor CV):")
+        print("\n Ranking (por robustez - menor CV):")
         ranked_cv = sorted(all_stats.items(), key=lambda x: x[1]['cv'])
         for i, (algo, stats) in enumerate(ranked_cv, 1):
             print(f"   {i}. {algo:<6} - CV: {stats['cv']:.4f}")
@@ -173,7 +173,7 @@ def export_convergence_data(results_dir, output_file):
     """
     Exporta datos de convergencia para graficar externamente
     """
-    algorithms = ['GA', 'PSO', 'DE', 'CS']
+    algorithms = ['GA', 'PSO', 'HYBRID_PSO_LBFGS']
 
     convergence_data = {}
 
@@ -182,7 +182,7 @@ def export_convergence_data(results_dir, output_file):
         if data is None:
             continue
 
-        # Extraer historias de convergencia de todos los runs
+        # Extraer convergencia de todos los runs
         convergence_data[algo] = {
             'runs': [run['convergence_history'] for run in data['runs']],
             'mean_convergence': None,  # Calcular después
@@ -212,7 +212,7 @@ def export_convergence_data(results_dir, output_file):
     with open(output_file, 'w') as f:
         json.dump(convergence_data, f, indent=2)
 
-    print(f"✓ Datos de convergencia exportados a: {output_file}")
+    print(f"-> Datos de convergencia exportados a: {output_file}")
 
 
 # =========================
@@ -225,7 +225,7 @@ def plot_best_parameters_simulation(results_dir, algorithm_name):
     """
     data = load_algorithm_results(results_dir, algorithm_name)
     if data is None:
-        print(f"❌ No se encontraron resultados para {algorithm_name}")
+        print(f" No se encontraron resultados para {algorithm_name}")
         return
 
     best_run = data['runs'][get_best_run(data['runs']) - 1]
@@ -234,7 +234,7 @@ def plot_best_parameters_simulation(results_dir, algorithm_name):
         dtype=th.float32
     ).unsqueeze(0)
 
-    print(f"\n🔍 Simulando con los mejores parámetros del {algorithm_name}:")
+    print(f"\n Simulando con los mejores parámetros del {algorithm_name}:")
     for name, val in zip(PARAM_NAMES, best_params.squeeze().tolist()):
         print(f"   {name:<8} = {val:.6f}")
 
@@ -294,7 +294,7 @@ def plot_best_parameters_simulation(results_dir, algorithm_name):
     plt.show()
 
 
-def plot_overlay_algorithms(results_dir, algorithms=('GA', 'PSO', 'DE', 'CS')):
+def plot_overlay_algorithms(results_dir, algorithms=('GA', 'PSO', 'HYBRID_PSO_LBFGS', 'CS')):
     """
     Carga el mejor individuo de cada algoritmo, simula y sobrepone
     corriente, rpm y torque en la misma figura usando colores de config.
@@ -389,13 +389,13 @@ def main():
 
     # Directorio de resultados
     if args.phase not in PHASES:
-        print(f"❌ Fase '{args.phase}' no reconocida")
+        print(f" Fase '{args.phase}' no reconocida")
         print(f"   Fases disponibles: {', '.join(PHASES.keys())}")
         return
 
     results_dir = PHASES[args.phase]['output_dir']
     if not os.path.exists(results_dir):
-        print(f"❌ No se encontró el directorio: {results_dir}")
+        print(f" No se encontró el directorio: {results_dir}")
         print(f"   Ejecuta primero: python main_{args.phase}.py")
         return
 
@@ -410,7 +410,7 @@ def main():
             print_detailed_statistics(args.algorithm, data)
     else:
         compare_algorithms(results_dir)
-        for algo in ['GA', 'PSO', 'DE', 'CS']:
+        for algo in ['GA', 'PSO', 'HYBRID_PSO_LBFGS']:
             data = load_algorithm_results(results_dir, algo)
             if data:
                 print_detailed_statistics(algo, data)
@@ -425,7 +425,7 @@ def main():
         if args.algorithm:
             plot_best_parameters_simulation(results_dir, args.algorithm)
         else:
-            plot_overlay_algorithms(results_dir, algorithms=['GA', 'PSO', 'DE', 'CS'])
+            plot_overlay_algorithms(results_dir, algorithms=['GA', 'PSO', 'HYBRID_PSO_LBFGS'])
 
     print(f"\n{'='*70}\n")
 

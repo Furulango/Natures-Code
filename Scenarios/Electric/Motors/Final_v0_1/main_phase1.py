@@ -24,7 +24,7 @@ from motor_dynamic_batch import InductionMotorModelBatch
 from BIA_algorithms_parallel import (
     genetic_algorithm_parallel,
     particle_swarm_optimization_parallel,
-    cma_es_parallel,
+    bee_memetic_parallel,
     hybrid_pso_lbfgs_parallel,
 )
 
@@ -215,7 +215,7 @@ def main():
 
     
     # 5. Configurar gestor de experimentos
-    phase_config = PHASES['phase1']
+    phase_config = PHASES['phase1']  
     exp_manager = ExperimentManager(
         output_dir=phase_config['output_dir'],
         phase_name=phase_config['name']
@@ -223,10 +223,10 @@ def main():
     
     # 6. Definir algoritmos a ejecutar
     algorithms = {
-        #"GA": genetic_algorithm_parallel,
-        #"PSO": particle_swarm_optimization_parallel,
-        #"CMAES": cma_es_parallel,
+        "GA": genetic_algorithm_parallel,
+        "PSO": particle_swarm_optimization_parallel,
         "HYBRID_PSO_LBFGS": hybrid_pso_lbfgs_parallel,
+        #"BEE_MEMETIC": bee_memetic_parallel,   
     }
     
     # 7. Ejecutar todos los experimentos

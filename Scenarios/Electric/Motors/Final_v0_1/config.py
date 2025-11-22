@@ -73,15 +73,15 @@ MOTOR_VOLTAGE = {
 # CONFIGURACIÓN DE EXPERIMENTOS
 
 EXPERIMENT_CONFIG = {
-    'num_runs': 1,         # Número de ejecuciones por algoritmo
-    'base_seed': 40,        # Semilla base para reproducibilidad
+    'num_runs': 50,         # Número de ejecuciones por algoritmo
+    'base_seed': 43,        # Semilla base para reproducibilidad
     'save_frequency': 5,    # Guardar cada N runs
 }
 
 # CONFIGURACIÓN DE OPTIMIZACIÓN
 
 OPTIMIZATION_CONFIG = {
-    'max_fes': 3000,       # Evaluaciones de función máximas
+    'max_fes': 5000,       # Evaluaciones de función máximas
     'time_total': 1,      # Tiempo total de simulación en segundos
     'time_steps': 1000,      # Pasos de tiempo para ODE (balance velocidad/precisión) 
     'rtol': 1e-3,          # Tolerancia relativa ODE
@@ -120,18 +120,6 @@ ALGORITHM_CONFIGS = {
         'c2': 1.49618,         # Coeficiente social
         'color': '#ff7f0e'
     },
-    "CMAES": {
-        "name": "CMA-ES",
-        "short_name": "CMAES",
-        "max_fes": OPTIMIZATION_CONFIG["max_fes"],
-        # si no especificas popsize/mu,sigma0 se calculan en el código
-        "pop_size": 16,
-        "mu": 8,
-        "sigma0": 0.3,
-        "color": "#2ca02c",
-    },
-
-    # ---------- 4º algoritmo: PSO + L-BFGS ----------
     "HYBRID_PSO_LBFGS": {
         "name": "PSO + L-BFGS",
         "short_name": "HYB",
@@ -142,7 +130,30 @@ ALGORITHM_CONFIGS = {
         "lbfgs_lr": 1.0,
         "color": "#d62728",
     },
+    'BEE_MEMETIC': {
+        'name': 'Bee Memetic 3-Level',
+        'short_name': 'BEE',
+        'max_fes': OPTIMIZATION_CONFIG['max_fes'],
+        "pop_size": 200,
 
+        'global_frac': 0.25,   # exploración global (scouts) 0.3
+        'neigh_frac': 0.35,    # exploración intermedia (vecindarios) 0.4
+        # el 0.3 restante se usa para la fase local L-BFGS
+
+        # nivel global
+        'n_scouts': 100,      # número de abejas exploradoras iniciales 200
+        # nivel intermedio (sitios y vecindarios)
+        'n_sites': 10,        # sitios a mantener
+        'n_elite': 3,         # sitios élite
+        'neigh_elite': 10,    # abejas reclutadas por sitio élite 20
+        'neigh_other': 5,    # abejas por otros sitios10
+        # nivel local (refinamiento L-BFGS)
+        'n_local_starts': 3,  # cuántos sitios pasan a refinamiento
+        'max_local_iters': 10,
+        'lbfgs_lr': 1.0,
+
+        'color': '#9467bd',
+    },
 }
 
 
