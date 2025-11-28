@@ -1,0 +1,12 @@
+Velocidad 1450 rpm
+Tensión de línea 230Vrms
+Pruebas de 1 minuto con arranque y paro
+Fecha: 29 Oct 2025
+
+La carpeta eccentricity_prev se tomó el 28 de Oct 2025
+
+Sensores
+Ia: bobina chica (UAQ)
+Ib: bobina grande (roja)
+Ic: pinza Current clamp MN 60 20A mV/A
+Sensor triaxial 
