@@ -53,7 +53,7 @@ def generate_synthetic_data():
     np.savetxt('data/rpm_measured.txt', rpm_sim)
     np.savetxt('data/torque_measured.txt', torque_sim)
     
-    print("\n✅ Datos sintéticos generados y guardados:")
+    print("\nDatos sintéticos generados y guardados:")
     print(f" • Puntos: {len(current_sim)}")
     print(f" • Corriente: [{current_sim.min():.2f}, {current_sim.max():.2f}] A")
     print(f" • RPM: [{rpm_sim.min():.2f}, {rpm_sim.max():.2f}]")
